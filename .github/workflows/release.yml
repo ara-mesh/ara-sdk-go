@@ -11,10 +11,25 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version-file: go.mod
+
+      - name: Download libaraengine for linux_amd64
+        env:
+          GH_TOKEN: ${{ secrets.ARA_ENGINE_TOKEN }}
+        run: |
+          TAG=$(gh release list --repo ara-mesh/ara --limit 1 --json tagName -q '.[0].tagName')
+          echo "Downloading libaraengine from $TAG"
+          gh release download "$TAG" --repo ara-mesh/ara \
+            --pattern "libaraengine-linux-amd64.so" \
+            --dir lib/linux_amd64 \
+            && mv lib/linux_amd64/libaraengine-linux-amd64.so lib/linux_amd64/libaraengine.so \
+            || echo "No release found, using committed binaries"
+
       - run: CGO_ENABLED=1 go test ./...
+
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
