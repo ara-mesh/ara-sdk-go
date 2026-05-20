@@ -12,10 +12,12 @@ jobs:
         include:
           - os: ubuntu-latest
             platform: linux_amd64
-            pattern: 'libaraengine*linux_amd64*'
+            lib: libaraengine.so
+            pattern: 'libaraengine-linux-amd64.so'
           - os: macos-latest
             platform: darwin_arm64
-            pattern: 'libaraengine*darwin_arm64*'
+            lib: libaraengine.dylib
+            pattern: 'libaraengine-darwin-arm64.dylib'
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -28,9 +30,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.ARA_ENGINE_TOKEN }}
         run: |
-          gh release download --repo ara-mesh/ara \
-            --pattern '${{ matrix.pattern }}' \
+          gh release download --repo ara-mesh/ara --latest \
+            --pattern "${{ matrix.pattern }}" \
             --dir lib/${{ matrix.platform }} \
-            2>/dev/null || echo "No release found, using committed binaries"
+            && mv lib/${{ matrix.platform }}/${{ matrix.pattern }} lib/${{ matrix.platform }}/${{ matrix.lib }} \
+            || echo "No release found, using committed binaries"
 
       - run: CGO_ENABLED=1 go test ./...
