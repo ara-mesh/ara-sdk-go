@@ -30,10 +30,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.ARA_ENGINE_TOKEN }}
         run: |
-          gh release download --repo ara-mesh/ara --latest \
+          TAG=$(gh release list --repo ara-mesh/ara --limit 1 --json tagName -q '.[0].tagName')
+          echo "Downloading libaraengine from $TAG"
+          gh release download "$TAG" --repo ara-mesh/ara \
             --pattern "${{ matrix.pattern }}" \
             --dir lib/${{ matrix.platform }} \
-            && mv lib/${{ matrix.platform }}/${{ matrix.pattern }} lib/${{ matrix.platform }}/${{ matrix.lib }} \
+            && mv "lib/${{ matrix.platform }}/${{ matrix.pattern }}" "lib/${{ matrix.platform }}/${{ matrix.lib }}" \
             || echo "No release found, using committed binaries"
 
       - run: CGO_ENABLED=1 go test ./...
