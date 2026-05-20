@@ -87,4 +87,4 @@ Full API reference and guides: [ara-mesh.github.io/ara-docs](https://ara-mesh.gi
 
 ## License
 
-MIT
+Proprietary — All Rights Reserved. See [LICENSE](LICENSE).
