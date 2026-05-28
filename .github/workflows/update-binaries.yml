@@ -26,9 +26,15 @@ jobs:
             --dir /tmp/engine-bins \
             --pattern 'libaraengine*'
           mkdir -p lib/darwin_arm64 lib/linux_arm64 lib/linux_amd64
-          cp /tmp/engine-bins/darwin_arm64/* lib/darwin_arm64/ 2>/dev/null || true
-          cp /tmp/engine-bins/linux_arm64/*  lib/linux_arm64/  2>/dev/null || true
-          cp /tmp/engine-bins/linux_amd64/*  lib/linux_amd64/  2>/dev/null || true
+          for f in /tmp/engine-bins/*; do
+            fname=$(basename "$f")
+            ext="${fname##*.}"
+            case "$fname" in
+              *-darwin-arm64.*) cp "$f" "lib/darwin_arm64/libaraengine.${ext}" ;;
+              *-linux-arm64.*)  cp "$f" "lib/linux_arm64/libaraengine.${ext}"  ;;
+              *-linux-amd64.*)  cp "$f" "lib/linux_amd64/libaraengine.${ext}"  ;;
+            esac
+          done
 
       - uses: peter-evans/create-pull-request@v6
         with:
