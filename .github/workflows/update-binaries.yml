@@ -12,6 +12,9 @@ on:
 jobs:
   update:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
@@ -38,6 +41,7 @@ jobs:
 
       - uses: peter-evans/create-pull-request@v6
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "chore: update libaraengine to ${{ github.event.inputs.version || github.event.client_payload.version }}"
           title: "chore: update libaraengine to ${{ github.event.inputs.version || github.event.client_payload.version }}"
           branch: "update-engine-${{ github.event.inputs.version || github.event.client_payload.version }}"
