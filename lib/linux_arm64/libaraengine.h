@@ -233,6 +233,11 @@ extern char* AraAllowPeer(long long int h, char* pubkeyHexC, char* labelC);
 extern char* AraRevokePeer(long long int h, char* pubkeyHexC);
 extern void AraSetSyncInterval(long long int h, int secondsC);
 
+// AraSetTestShutdownDelay sets the test-only shutdown delay for the sync engine.
+// Only used by SDK tests to verify that Close() waits for the Run goroutine.
+//
+extern void AraSetTestShutdownDelay(int ms);
+
 #ifdef __cplusplus
 }
 #endif
