@@ -125,6 +125,28 @@ type PeerInfo struct {
 	Health        string   `json:"Health"`
 }
 
+// GraphNode is a node in the mesh topology returned by [Node.PeerGraph].
+// Self is true for this device.
+type GraphNode struct {
+	ID     string `json:"id"`
+	Health string `json:"health"`
+	Self   bool   `json:"self"`
+}
+
+// GraphEdge is a link in the mesh topology. Direct is true when this node heard
+// from the peer directly, false when the peer was introduced via gossip.
+type GraphEdge struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
+	Direct bool   `json:"direct"`
+}
+
+// GraphData is the mesh topology returned by [Node.PeerGraph].
+type GraphData struct {
+	Nodes []GraphNode `json:"nodes"`
+	Edges []GraphEdge `json:"edges"`
+}
+
 // ── node ─────────────────────────────────────────────────────────────────────
 
 // Node is an open Ara sync node. Create one with [Open]; close with [Close].
@@ -189,6 +211,12 @@ func Open(_ context.Context, cfg Config) (*Node, error) {
 func (n *Node) Close() error {
 	C.AraClose(n.h)
 	return nil
+}
+
+// SetTestShutdownDelay sets the test-only shutdown delay for the sync engine.
+// Used only by SDK tests to verify that Close() waits for the Run goroutine.
+func (n *Node) SetTestShutdownDelay(ms int) {
+	C.AraSetTestShutdownDelay(C.int(ms))
 }
 
 // NodeID returns this node's UUID string.
@@ -312,6 +340,64 @@ func (n *Node) Peers(_ context.Context) ([]PeerInfo, error) {
 	return peers, nil
 }
 
+// PeerGraph returns the mesh topology as nodes and edges. Nodes include this
+// device (Self == true) and all known peers. A Direct edge means this node
+// heard from the peer directly; an indirect edge was introduced via gossip.
+func (n *Node) PeerGraph(_ context.Context) (GraphData, error) {
+	c := C.AraPeerGraph(n.h)
+	s := C.GoString(c)
+	C.AraFree(c)
+
+	if strings.HasPrefix(s, `{"error"`) {
+		var e struct{ Error string `json:"error"` }
+		json.Unmarshal([]byte(s), &e) //nolint:errcheck
+		return GraphData{}, errors.New(e.Error)
+	}
+	var g GraphData
+	if err := json.Unmarshal([]byte(s), &g); err != nil {
+		return GraphData{}, fmt.Errorf("ara: decode peer graph: %w", err)
+	}
+	return g, nil
+}
+
+// PublicKey returns this node's hex-encoded X25519 public key, used to identify
+// it on a peer's allowlist. Empty when encryption is disabled.
+func (n *Node) PublicKey() string {
+	c := C.AraPublicKey(n.h)
+	s := C.GoString(c)
+	C.AraFree(c)
+	return s
+}
+
+// AllowPeer adds a peer's hex-encoded public key to the CRDT-synced allowlist
+// under a human-readable label. Only allowed peers are trusted when encryption
+// is enabled.
+func (n *Node) AllowPeer(_ context.Context, pubkeyHex, label string) error {
+	pubC := C.CString(pubkeyHex)
+	defer C.free(unsafe.Pointer(pubC))
+	labelC := C.CString(label)
+	defer C.free(unsafe.Pointer(labelC))
+	if errC := C.AraAllowPeer(n.h, pubC, labelC); errC != nil {
+		msg := C.GoString(errC)
+		C.AraFree(errC)
+		return errors.New(msg)
+	}
+	return nil
+}
+
+// RevokePeer marks a peer's hex-encoded public key as revoked in the CRDT-synced
+// allowlist. The revocation propagates to all nodes.
+func (n *Node) RevokePeer(_ context.Context, pubkeyHex string) error {
+	pubC := C.CString(pubkeyHex)
+	defer C.free(unsafe.Pointer(pubC))
+	if errC := C.AraRevokePeer(n.h, pubC); errC != nil {
+		msg := C.GoString(errC)
+		C.AraFree(errC)
+		return errors.New(msg)
+	}
+	return nil
+}
+
 // AddTransportUDP adds a UDP LAN transport. seeds is an optional list of
 // "host:port" addresses for peers on networks where multicast does not work
 // (e.g. macOS loopback, cross-subnet). port must be unique per node on localhost.
@@ -350,6 +436,40 @@ func (n *Node) AddTransportMQTT(cfg MQTTConfig) error {
 	cfgC := C.CString(string(b))
 	defer C.free(unsafe.Pointer(cfgC))
 	if errC := C.AraAddTransportMQTT(n.h, cfgC); errC != nil {
+		msg := C.GoString(errC)
+		C.AraFree(errC)
+		return errors.New(msg)
+	}
+	return nil
+}
+
+// AddTransportMeshtastic adds a Meshtastic LoRa transport via USB serial.
+// portPath is the serial device path (e.g. "/dev/ttyUSB0" or "/dev/ttyACM0").
+// channel is the Meshtastic channel index (0-7, default 0).
+func (n *Node) AddTransportMeshtastic(portPath string, channel int) error {
+	portC := C.CString(portPath)
+	defer C.free(unsafe.Pointer(portC))
+	if errC := C.AraAddTransportMeshtastic(n.h, portC, C.int(channel)); errC != nil {
+		msg := C.GoString(errC)
+		C.AraFree(errC)
+		return errors.New(msg)
+	}
+	return nil
+}
+
+// InitOTLP points OpenTelemetry trace export at otlpAddr (e.g. "host:4317") at
+// runtime, replacing any previous exporter. serviceName may be empty (defaults
+// to "ara-go"). Config.OTLPAddr configures the same thing at open time; use this
+// to re-point at an endpoint discovered later (e.g. an MQTT broker host).
+func (n *Node) InitOTLP(_ context.Context, otlpAddr, serviceName string) error {
+	if serviceName == "" {
+		serviceName = "ara-go"
+	}
+	addrC := C.CString(otlpAddr)
+	defer C.free(unsafe.Pointer(addrC))
+	svcC := C.CString(serviceName)
+	defer C.free(unsafe.Pointer(svcC))
+	if errC := C.AraInitOTLP(n.h, addrC, svcC); errC != nil {
 		msg := C.GoString(errC)
 		C.AraFree(errC)
 		return errors.New(msg)

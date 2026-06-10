@@ -3,6 +3,7 @@ package ara_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	ara "github.com/ara-mesh/ara-sdk-go"
 )
@@ -120,5 +121,38 @@ func TestPeers(t *testing.T) {
 	// no transport added, so no peers
 	if len(peers) != 0 {
 		t.Fatalf("expected 0 peers, got %d", len(peers))
+	}
+}
+
+// TestOpenClose_NoGoroutineLeak verifies that Close() waits for the background
+// Run goroutine to finish before returning. Before the fix, AraClose cancelled
+// the context and immediately called node.Close(), leaving the goroutine alive.
+// It would then send stale handshakes with the old NodeID, causing peers to
+// compute partial deltas for restarted nodes (manifesting as missing CRDT rows
+// like ara_blobs).
+func TestOpenClose_NoGoroutineLeak(t *testing.T) {
+	ctx := context.Background()
+
+	node, err := ara.Open(ctx, ara.Config{Path: ":memory:", Migrations: testMigrations})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Enable the test-only shutdown delay so the Run goroutine stays alive
+	// for a predictable 200 ms after context cancellation. This lets us verify
+	// that Close() waits for it (fix) vs. returns immediately (regression).
+	node.SetTestShutdownDelay(200)
+
+	start := time.Now()
+	if err := node.Close(); err != nil {
+		t.Fatal(err)
+	}
+	elapsed := time.Since(start)
+
+	// With the fix (wg.Wait) Close blocks until the goroutine exits.
+	// The test-only delay is 200 ms, so Close should take ≥ 200 ms.
+	// Without the fix Close returns immediately (< 50 ms).
+	if elapsed < 50*time.Millisecond {
+		t.Fatalf("Close returned too fast (%v) — goroutine leak not prevented", elapsed)
 	}
 }
